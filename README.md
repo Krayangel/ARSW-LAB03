@@ -164,6 +164,48 @@ Reescribe el **buscador de listas negras** para que la búsqueda **se detenga ta
 > Puedes usar `AtomicInteger` o sincronización mínima sobre la región crítica del contador.
 
 ---
+Resolucion:
+### Finalización anticipada
+
+La finalización temprana se logra mediante un contador compartido AtomicInteger globalOccurrences.
+Cada hilo (BlackListSearcher) verifica antes y durante su ciclo de búsqueda si el contador global ya alcanzó el límite. Cuando esto ocurre:
+
+* El hilo actual se detiene inmediatamente.
+
+* El hilo coordinador (HostBlackListsValidator) notifica a los demás hilos para que finalicen su ejecución.
+
+* No se siguen consultando servidores restantes.
+
+Esto permite reducir significativamente el tiempo de ejecución para IPs maliciosas.
+
+### Ausencia de condiciones de carrera
+
+La concurrencia se maneja de forma segura usando:
+
+* AtomicInteger, que garantiza incrementos atómicos del contador compartido.
+
+* Verificación del límite (globalOccurrences.get() >= BLACK_LIST_ALARM_COUNT) antes de continuar cada iteración.
+
+* Una bandera volatile (shouldStop) que asegura visibilidad inmediata del estado de parada entre hilos.
+
+De esta forma, no hay inconsistencias en el conteo ni accesos concurrentes inseguros.
+
+### Comportamiento observado
+
+Las pruebas confirmaron que:
+
+* Para IPs maliciosas, la búsqueda se detiene inmediatamente al alcanzar 5 ocurrencias.
+
+* Para IPs confiables, se recorren todos los servidores asignados.
+
+* No se pierden resultados encontrados antes de la parada.
+
+* El uso de CPU se mantiene eficiente, sin sobrecarga innecesaria.
+
+Se puede evidenciar el proceso de codigo en el siguiente repositorio:
+> https://github.com/Krayangel/ARSW-Lab1.git
+
+
 
 ## Parte III — (Avance) Sincronización y *Deadlocks* con *Highlander Simulator*
 1. Revisa la simulación: N inmortales; cada uno **ataca** a otro. El que ataca **resta M** al contrincante y **suma M/2** a su propia vida.  
