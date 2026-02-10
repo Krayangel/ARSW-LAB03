@@ -279,7 +279,7 @@ Si el valor de salud total varía entre dos pausas consecutivas, el problema es 
 
  Dato curioso: incluso con sincronización perfecta, el invariante no se cumple por diseño.
 
-⏸ Pause & Check
+ Pause & Check
 
 Una pausa mal implementada puede generar lecturas intermedias, donde algunos hilos ya modificaron el estado y otros no.
 
