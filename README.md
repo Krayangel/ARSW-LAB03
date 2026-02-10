@@ -227,6 +227,163 @@ Se puede evidenciar el proceso de codigo en el siguiente repositorio:
 10. **Remover inmortales muertos** sin bloquear la simulación: analiza si crea una **condición de carrera** con muchos hilos y corrige **sin sincronización global** (colección concurrente o enfoque *lock-free*).  
 11. Implementa completamente **STOP** (apagado ordenado).
 
+
+### Resolucion:
+Descripción de la Simulación
+
+La simulación modela N inmortales, cada uno ejecutándose en su propio hilo. Cada inmortal selecciona un oponente aleatorio y realiza un ataque en el que resta M puntos de vida al oponente y suma M/2 puntos a su propia vida. Este proceso se repite continuamente mientras la simulación está en ejecución.
+
+Invariante del Sistema
+
+Dado un número N de inmortales con salud inicial H, la suma total de salud esperada es N × H. Este valor se utiliza como referencia para validar la consistencia del sistema al momento de pausar la simulación. En la implementación actual, la fórmula de combate (-M + M/2) provoca una pérdida neta de salud, por lo que el invariante no se mantiene estrictamente, lo cual es intencional y sirve como evidencia para el análisis de concurrencia.
+
+Prueba “Pause & Check”
+
+Al ejecutar la interfaz gráfica y utilizar el botón “Pause & Check”, se pausa la simulación y se calcula la salud total de todos los inmortales. Se observó que, antes de corregir la pausa, el valor obtenido variaba entre ejecuciones debido a que algunos hilos seguían ejecutándose mientras se leía el estado. Tras implementar una pausa correcta, el valor mostrado es consistente entre pausas consecutivas, aunque no coincide con el valor teórico del invariante debido a la lógica de combate.
+
+Pausa Correcta y Resume
+
+Se implementó un mecanismo de pausa centralizado que garantiza que todos los hilos de los inmortales se encuentren detenidos antes de leer o imprimir la salud total. Para ello, los hilos verifican periódicamente el estado de pausa y reaccionan a interrupciones. El botón Resume permite reanudar la ejecución sin inconsistencias. Al hacer clic repetido en Pause y Resume, el sistema mantiene un estado coherente y no se observan lecturas “a medias”.
+
+Regiones Críticas y Sincronización
+
+Las secciones de código donde ocurre el combate entre dos inmortales fueron identificadas como regiones críticas, ya que involucran lectura y escritura concurrente sobre el estado de ambos participantes. Estas secciones fueron sincronizadas adecuadamente para evitar condiciones de carrera. Cuando se requirió usar múltiples locks, se aplicó un orden consistente basado en el identificador de los inmortales, garantizando que todos los hilos adquieren los locks en el mismo orden.
+
+Deadlocks: Diagnóstico y Corrección
+
+En el modo de sincronización ingenuo, la aplicación puede detenerse debido a deadlocks causados por la adquisición cruzada de locks. Cuando esto ocurrió, se utilizó jps para identificar el proceso Java y jstack para analizar el volcado de hilos, donde se evidenció un deadlock a nivel de JVM. Para corregirlo, se implementaron estrategias anti-deadlock como el orden total de locks y, alternativamente, el uso de tryLock con timeout y reintentos, eliminando la espera indefinida.
+
+Validación con N Grande
+
+La simulación fue probada con 100, 1000 y hasta 10000 inmortales. En estos escenarios, la aplicación se mantiene estable, la pausa funciona correctamente y no se presentan deadlocks cuando se utilizan las estrategias de sincronización adecuadas. Si el invariante no se mantiene, se verifica que la causa sea la lógica de combate y no un error de concurrencia.
+
+Remoción de Inmortales Muertos
+
+La eliminación de inmortales cuya salud llega a cero se realizó sin bloquear la simulación completa. Para evitar condiciones de carrera y cuellos de botella, se utilizó una colección concurrente para registrar los inmortales muertos y limpiarlos de la población de forma segura, sin necesidad de sincronización global.
+
+Implementación de STOP (Apagado Ordenado)
+
+Se implementó un apagado ordenado que señaliza a todos los hilos que deben finalizar su ejecución, interrumpe aquellos que están bloqueados o en espera y espera su terminación con un timeout razonable. Finalmente, se liberan los recursos y se deja la aplicación en un estado consistente.
+
+Invariante del Sistema
+
+Aunque el invariante teórico es N × H, la fórmula de combate actual introduce una pérdida neta de M/2 por ataque, lo que implica que la salud total disminuye de forma monotónica.
+
+Esto permite diferenciar claramente entre:
+
+Errores de lógica del modelo
+
+Errores de sincronización concurrente
+
+Si el valor de salud total varía entre dos pausas consecutivas, el problema es de concurrencia; si es consistente pero menor al esperado, el problema es del modelo.
+
+ Dato curioso: incluso con sincronización perfecta, el invariante no se cumple por diseño.
+
+⏸ Pause & Check
+
+Una pausa mal implementada puede generar lecturas intermedias, donde algunos hilos ya modificaron el estado y otros no.
+
+Esto produce valores distintos sin que exista una carrera explícita, lo cual es una de las trampas más comunes en concurrencia.
+
+La solución no es solo “pausar”, sino garantizar que todos los hilos estén efectivamente detenidos antes de leer el estado compartido.
+
+ Dato curioso: Thread.sleep() no garantiza que un hilo pueda pausar inmediatamente; por eso la interrupción es clave.
+
+ Pause / Resume Repetido
+
+Al presionar Pause y Resume múltiples veces, se validó que:
+
+No se acumulan estados inconsistentes
+
+No se producen pérdidas de señal (lost wake-ups)
+
+Esto confirma que el mecanismo de pausa no depende del timing, sino del estado global de control.
+
+ Dato curioso: muchos sistemas concurrentes funcionan bien “una vez”, pero fallan al repetir la operación.
+
+ Regiones Críticas
+
+El combate involucra dos objetos compartidos, lo que lo convierte en una región crítica compuesta.
+
+Sin sincronización, pueden ocurrir:
+
+Daño aplicado dos veces
+
+Salud negativa
+
+Lecturas inconsistentes
+
+La sincronización se realizó solo sobre los objetos necesarios, evitando un lock global que degradaría el rendimiento.
+
+ Dato curioso: sincronizar “de más” elimina errores… pero mata la escalabilidad.
+
+ Orden Total de Locks
+
+El uso de un orden basado en ID garantiza que no exista espera circular, condición necesaria para un deadlock.
+
+Todos los hilos adquieren los locks en el mismo orden, independientemente de quién ataque a quién.
+
+ Dato curioso: esta técnica es exactamente la misma que se usa en bases de datos para evitar deadlocks.
+
+ Deadlocks y Diagnóstico
+
+En el modo ingenuo, se observaron deadlocks reales detectables por la JVM.
+
+Con jstack, se identificó claramente el ciclo de espera entre hilos.
+
+Esto permitió confirmar que el problema no era de rendimiento, sino de bloqueo mutuo.
+
+ Dato curioso: Java puede detectar deadlocks automáticamente a nivel de JVM, pero no los corrige.
+
+ TryLock y Timeouts
+
+El uso de tryLock(timeout) evita la espera indefinida.
+
+En caso de fallo, el hilo libera recursos y reintenta, reduciendo la probabilidad de bloqueo total.
+
+Se puede aplicar backoff para disminuir la contención en escenarios con muchos hilos.
+
+ Dato curioso: este patrón es muy usado en sistemas financieros y motores de juegos.
+
+ Escalabilidad (N Grande)
+
+Con 10.000 hilos, el cuello de botella no es la sincronización, sino:
+
+Cambio de contexto
+
+Consumo de CPU
+
+El diseño evita locks globales, lo que permite que la simulación siga siendo funcional.
+
+ Dato curioso: más hilos no siempre significa más rendimiento; a partir de cierto punto, empeora.
+
+ Remoción de Inmortales Muertos
+
+Remover elementos de una colección compartida mientras otros hilos la recorren es una fuente clásica de errores.
+
+El uso de colecciones concurrentes permite:
+
+Eliminación segura
+
+Sin bloquear la simulación completa
+
+Se evita ConcurrentModificationException.
+
+ Dato curioso: muchas aplicaciones fallan solo cuando el sistema “envejece” y empieza a eliminar objetos.
+
+ STOP (Apagado Ordenado)
+
+El apagado no se basa en System.exit(), sino en:
+
+Señales de parada
+
+Interrupciones
+
+Espera controlada de finalización
+
+Esto garantiza que no queden hilos zombie ni recursos sin liberar.
+
+ Dato curioso: apagar mal un sistema concurrente es una de las principales causas de fugas de memoria.
 ---
 
 ## Entregables

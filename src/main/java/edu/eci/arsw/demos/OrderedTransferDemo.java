@@ -1,8 +1,9 @@
 package edu.eci.arsw.demos;
 
+import java.util.concurrent.Executors;
+
 import edu.eci.arsw.core.BankAccount;
 import edu.eci.arsw.core.TransferService;
-import java.util.concurrent.Executors;
 
 public final class OrderedTransferDemo {
   private OrderedTransferDemo() {}
