@@ -10,10 +10,10 @@ public final class PauseController {
     private volatile boolean paused = false;
     private final AtomicInteger pausedThreads = new AtomicInteger(0);
     private volatile int totalThreads = 0;
-    
+
     // Lista de threads a interrumpir
     private Thread[] threads;
-    
+
     public void setTotalThreads(int total) {
         lock.lock();
         try {
@@ -25,14 +25,27 @@ public final class PauseController {
             lock.unlock();
         }
     }
-    
+
     // Registrar thread cuando inicia
     public void registerThread(Thread thread, int index) {
         if (index >= 0 && index < threads.length) {
             threads[index] = thread;
         }
     }
-    
+
+    public void removeThread() {
+        lock.lock();
+        try {
+            totalThreads--;
+            if (paused && pausedThreads.get() >= totalThreads) {
+                System.out.println("[PAUSE] ✅ TODOS PAUSADOS (por salida de thread) (" + pausedThreads.get() + "/"
+                        + totalThreads + ")");
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public void pause() {
         lock.lock();
         try {
@@ -40,7 +53,7 @@ public final class PauseController {
                 System.out.println("\n=== INICIANDO PAUSA ===");
                 paused = true;
                 pausedThreads.set(0);
-                
+
                 // INTERRUMPIR TODOS LOS THREADS PARA QUE DESPIERTEN
                 System.out.println("[PAUSE] Interrumpiendo " + totalThreads + " threads...");
                 for (int i = 0; i < threads.length; i++) {
@@ -54,7 +67,7 @@ public final class PauseController {
             lock.unlock();
         }
     }
-    
+
     public void resume() {
         lock.lock();
         try {
@@ -67,32 +80,33 @@ public final class PauseController {
             lock.unlock();
         }
     }
-    
-    public boolean paused() { 
-        return paused; 
+
+    public boolean paused() {
+        return paused;
     }
-    
+
     public void awaitIfPaused() throws InterruptedException {
-        if (!paused) return;
-        
+        if (!paused)
+            return;
+
         lock.lock();
         try {
             if (paused) {
                 int current = pausedThreads.incrementAndGet();
                 String threadName = Thread.currentThread().getName();
-                
+
                 System.out.println("[PAUSE] " + threadName + " se pausó (" + current + "/" + totalThreads + ")");
-                
+
                 // Si somos el último, notificar
                 if (current >= totalThreads) {
                     System.out.println("[PAUSE] ✅ TODOS PAUSADOS (" + current + "/" + totalThreads + ")");
                 }
-                
+
                 // Esperar
                 while (paused) {
                     unpaused.await();
                 }
-                
+
                 pausedThreads.decrementAndGet();
                 System.out.println("[PAUSE] " + threadName + " reanudado");
             }
@@ -100,37 +114,37 @@ public final class PauseController {
             lock.unlock();
         }
     }
-    
+
     // Esperar con timeout
     public boolean waitForAllPaused(long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
-        
+
         while (pausedThreads.get() < totalThreads) {
             long remaining = deadline - System.currentTimeMillis();
             if (remaining <= 0) {
                 System.out.println("[PAUSE] ⏰ TIMEOUT: Solo " + pausedThreads.get() + "/" + totalThreads + " pausados");
                 return false;
             }
-            
+
             // Mostrar progreso
             System.out.println("[PAUSE] Progreso: " + pausedThreads.get() + "/" + totalThreads);
-            
+
             // Pequeña espera
             Thread.sleep(100);
         }
-        
+
         System.out.println("[PAUSE] ✅ PAUSA COMPLETA: " + pausedThreads.get() + "/" + totalThreads);
         return true;
     }
-    
+
     public int getPausedThreadsCount() {
         return pausedThreads.get();
     }
-    
+
     public int getTotalThreads() {
         return totalThreads;
     }
-    
+
     public void forceResume() {
         lock.lock();
         try {
